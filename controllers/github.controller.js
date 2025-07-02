@@ -1,5 +1,14 @@
 const GithubIntegration = require("../models/GithubIntegration.model");
+const GithubOrganization = require("../models/GithubOrganization.model");
+const OrgRepo = require("../models/OrgRepo.model");
+const OrgCommit = require("../models/OrgCommit.model");
+const OrgPull = require("../models/OrgPull.model");
+const OrgIssue = require("../models/OrgIssue.model");
+const OrgChangelog = require("../models/OrgChangelog.model");
+const OrgUser = require("../models/OrgUser.model");
 const { syncOrganizationsAndData } = require("../helpers/github.sync");
+const { queryCollection } = require("../helpers/github.query");
+
 const collectionMap = {
   "github-organizations": require("../models/GithubOrganization.model"),
   "org-repos": require("../models/OrgRepo.model"),

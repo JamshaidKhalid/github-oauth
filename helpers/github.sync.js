@@ -11,17 +11,43 @@ const OrgUser = require("../models/OrgUser.model");
 
 const GITHUB_API = "https://api.github.com";
 
-async function fetchFromGitHub(endpoint, token, params = {}) {
-  const res = await axios.get(`${GITHUB_API}${endpoint}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json"
-    },
-    params
-  });
-  return res.data;
+// -------------------------
+// Pagination helper
+// -------------------------
+async function fetchAllFromGitHub(endpoint, token, params = {}) {
+  const allData = [];
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    try {
+      const res = await axios.get(`${GITHUB_API}${endpoint}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json"
+        },
+        params: { ...params, per_page: perPage, page }
+      });
+
+      const data = res.data;
+      if (!Array.isArray(data) || data.length === 0) break;
+
+      allData.push(...data);
+      if (data.length < perPage) break;
+
+      page++;
+    } catch (err) {
+      console.error(`❌ Failed fetching ${endpoint}?page=${page}:`, err.message);
+      break;
+    }
+  }
+
+  return allData;
 }
 
+// -------------------------
+// Main sync function
+// -------------------------
 exports.syncOrganizationsAndData = async () => {
   const integration = await GithubIntegration.findOne();
   if (!integration) throw new Error("No GitHub integration found");
@@ -29,25 +55,46 @@ exports.syncOrganizationsAndData = async () => {
   const token = integration.accessToken;
   const integrationId = integration._id;
 
-  const orgs = await fetchFromGitHub("/user/orgs", token);
+  console.log("🔄 Syncing GitHub data...");
+
+  // 1. Get active orgs via /user/memberships/orgs
+  const memberships = await fetchAllFromGitHub("/user/memberships/orgs", token);
+  const orgs = memberships
+    .filter((m) => m.state === "active")
+    .map((m) => ({ login: m.organization.login }));
+
+  if (!orgs.length) {
+    throw new Error("No active GitHub organization memberships found for this user.");
+  }
+
   await GithubOrganization.deleteMany({ integrationId });
 
-  await GithubOrganization.insertMany(
-    orgs.map((org) => ({
-      integrationId,
-      orgId: org.id,
-      login: org.login,
-      avatarUrl: org.avatar_url,
-      description: org.description,
-      url: org.url
-    }))
-  );
-
+  // 2. Sync orgs and everything inside
   for (const org of orgs) {
     const orgName = org.login;
+    console.log(`🏢 Org: ${orgName}`);
 
-    // Repos
-    const repos = await fetchFromGitHub(`/orgs/${orgName}/repos`, token, { per_page: 50 });
+    // Save organization info
+    await GithubOrganization.create({
+      integrationId,
+      login: orgName
+    });
+
+    // Sync members
+    const members = await fetchAllFromGitHub(`/orgs/${orgName}/members`, token);
+    await OrgUser.deleteMany({ integrationId, orgName });
+    await OrgUser.insertMany(
+      members.map((m) => ({
+        integrationId,
+        orgName,
+        login: m.login,
+        avatarUrl: m.avatar_url,
+        htmlUrl: m.html_url
+      }))
+    );
+
+    // Sync repos
+    const repos = await fetchAllFromGitHub(`/orgs/${orgName}/repos`, token);
     await OrgRepo.deleteMany({ integrationId, orgName });
     await OrgRepo.insertMany(
       repos.map((repo) => ({
@@ -66,9 +113,10 @@ exports.syncOrganizationsAndData = async () => {
 
     for (const repo of repos) {
       const repoName = repo.name;
+      console.log(`📁 Repo: ${repoName}`);
 
       // Commits
-      const commits = await fetchFromGitHub(`/repos/${orgName}/${repoName}/commits`, token, { per_page: 20 });
+      const commits = await fetchAllFromGitHub(`/repos/${orgName}/${repoName}/commits`, token);
       await OrgCommit.deleteMany({ integrationId, orgName, repoName });
       await OrgCommit.insertMany(
         commits.map((c) => ({
@@ -84,8 +132,8 @@ exports.syncOrganizationsAndData = async () => {
         }))
       );
 
-      // Pulls
-      const pulls = await fetchFromGitHub(`/repos/${orgName}/${repoName}/pulls`, token, { state: "all", per_page: 20 });
+      // Pull Requests
+      const pulls = await fetchAllFromGitHub(`/repos/${orgName}/${repoName}/pulls`, token, { state: "all" });
       await OrgPull.deleteMany({ integrationId, orgName, repoName });
       await OrgPull.insertMany(
         pulls.map((p) => ({
@@ -104,7 +152,7 @@ exports.syncOrganizationsAndData = async () => {
       );
 
       // Issues
-      const issues = await fetchFromGitHub(`/repos/${orgName}/${repoName}/issues`, token, { state: "all", per_page: 20 });
+      const issues = await fetchAllFromGitHub(`/repos/${orgName}/${repoName}/issues`, token, { state: "all" });
       await OrgIssue.deleteMany({ integrationId, orgName, repoName });
       await OrgIssue.insertMany(
         issues.map((i) => ({
@@ -122,9 +170,9 @@ exports.syncOrganizationsAndData = async () => {
         }))
       );
 
-      // Changelogs
+      // Changelogs from issue comments
       for (const issue of issues) {
-        const comments = await fetchFromGitHub(`/repos/${orgName}/${repoName}/issues/${issue.number}/comments`, token);
+        const comments = await fetchAllFromGitHub(`/repos/${orgName}/${repoName}/issues/${issue.number}/comments`, token);
         await OrgChangelog.deleteMany({ integrationId, orgName, repoName, issueNumber: issue.number });
         await OrgChangelog.insertMany(
           comments.map((c) => ({
@@ -139,20 +187,7 @@ exports.syncOrganizationsAndData = async () => {
         );
       }
     }
-
-    // Members
-    const members = await fetchFromGitHub(`/orgs/${orgName}/members`, token, { per_page: 50 });
-    await OrgUser.deleteMany({ integrationId, orgName });
-    await OrgUser.insertMany(
-      members.map((m) => ({
-        integrationId,
-        orgName,
-        login: m.login,
-        userId: m.id,
-        avatarUrl: m.avatar_url,
-        htmlUrl: m.html_url,
-        role: m.role || "member"
-      }))
-    );
   }
+
+  console.log("✅ GitHub data sync completed.");
 };

@@ -5,7 +5,6 @@ const dotenv = require("dotenv");
 const passport = require("passport");
 
 const connectDB = require("./config/connectDB");
-const session = require("./config/session");
 
 require("./config/passport");
 
@@ -19,9 +18,6 @@ connectDB();
 app.use(cors());
 app.use(bodyparser.json());
 app.use(bodyparser.urlencoded({ extended: true }));
-app.use(session);
-app.use(passport.initialize());
-app.use(passport.session());
 
 
 app.use("/", require("./routes/github.route"));

@@ -15,9 +15,12 @@ router.get("/auth/github", passport.authenticate("github", { scope: ["user:email
 // OAuth callback
 router.get(
   "/auth/github/callback",
-  passport.authenticate("github", { failureRedirect: "/" }),
+  passport.authenticate("github", {
+    failureRedirect: '/',
+    session: false
+  }),
   (req, res) => {
-    res.redirect("http://localhost:4200"); // Send to Angular frontend
+    res.redirect("http://localhost:4200"); 
   }
 );
 

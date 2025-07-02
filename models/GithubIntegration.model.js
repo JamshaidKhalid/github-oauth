@@ -10,4 +10,4 @@ const GithubIntegrationSchema = new mongoose.Schema({
   connectedAt: { type: Date, default: Date.now }
 });
 
-module.exports = mongoose.model("GithubIntegration", GithubIntegrationSchema);
+module.exports = mongoose.model("GithubIntegration", GithubIntegrationSchema, "github-integrations");

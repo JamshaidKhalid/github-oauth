@@ -5,27 +5,36 @@ exports.queryCollection = async ({ model, page = 1, pageSize = 10, sort = {}, fi
   const match = {};
 
   // Apply filters
-  for (const key in filters) {
-    match[key] = { $regex: filters[key], $options: "i" }; // case-insensitive
+  if (filters && typeof filters === 'object') {
+    for (const [field, condition] of Object.entries(filters)) {
+      if (typeof condition === 'object' && condition.filter !== undefined) {
+        // Basic equality filter (adjust as needed)
+        match[field] = { $regex: new RegExp(condition.filter, "i") };
+      }
+    }
   }
 
   // Global search (optional)
-  if (search && search.trim() !== "") {
-    const searchRegex = new RegExp(search, "i");
-    const searchFields = Object.keys(model.schema.paths).filter(
-      (field) => !["_id", "__v", "integrationId"].includes(field)
-    );
+  const searchRegex = new RegExp(search, "i");
 
+  const searchFields = Object.entries(model.schema.paths)
+    .filter(([field, type]) =>
+      type.instance === "String" &&
+      !["_id", "__v", "integrationId"].includes(field)
+    )
+    .map(([field]) => field);
+
+  if (searchFields.length > 0) {
     match["$or"] = searchFields.map((field) => ({
       [field]: { $regex: searchRegex }
     }));
   }
 
+  const sortField = sort?.field || '_id'; // fallback field
+  const sortOrder = sort?.order === 'desc' ? -1 : 1;
   // Sorting
   const sortObj = {};
-  if (sort.field) {
-    sortObj[sort.field] = sort.order === "desc" ? -1 : 1;
-  }
+  sortObj[sortField] = sortOrder;
 
   const total = await model.countDocuments(match);
   const data = await model.find(match).sort(sortObj).skip(skip).limit(pageSize).lean();
