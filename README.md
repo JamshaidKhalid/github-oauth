@@ -51,8 +51,8 @@ This is the backend service for a GitHub OAuth integration system built using **
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/github-integration-be.git
-cd github-integration-be
+git clone https://github.com/jamshaidkhalid/github-oauth-be.git
+cd github-oauth-be
 ```
 
 ### 2. Install dependencies
