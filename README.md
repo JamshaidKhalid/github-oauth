@@ -75,7 +75,7 @@ GITHUB_CLIENT_SECRET=your_github_client_secret
 ### 4. Start the server
 
 ```bash
-npm run dev
+npm run start
 ```
 
 ---
